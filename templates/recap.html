@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rekap Absensi PPNPN</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {# Leaflet CSS untuk peta di rekap #}
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossorigin=""/>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f7f6; }
+        .container { max-width: 1200px; margin: auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #333; margin-bottom: 25px; }
+        .action-links { text-align: right; margin-bottom: 20px; }
+        .action-links a { text-decoration: none; padding: 8px 15px; background-color: #5cb85c; color: white; border-radius: 4px; margin-left: 10px; font-size: 0.9em; }
+        .action-links a:hover { background-color: #4cae4c; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 0.9em; }
+        th { background-color: #f2f2f2; color: #555; font-weight: 600; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        td img { max-width: 80px; height: auto; border-radius: 4px; display: block; }
+        .no-data { text-align: center; color: #777; margin-top: 30px; }
+        .map-popup-link { font-size: 0.9em; color: #007bff; cursor: pointer; text-decoration: underline; }
+        .map-popup-link:hover { color: #0056b3; }
+        /* Simple modal style */
+        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.6); }
+        .modal-content { background-color: #fefefe; margin: 10% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 500px; border-radius: 5px; position: relative; }
+        .close-btn { color: #aaa; position: absolute; top: 10px; right: 15px; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .close-btn:hover, .close-btn:focus { color: black; text-decoration: none; }
+        #modalMap { height: 300px; width: 100%; margin-top: 15px; }
+        /* Responsive table */
+        @media screen and (max-width: 768px) {
+            table, thead, tbody, th, td, tr { display: block; }
+            thead tr { position: absolute; top: -9999px; left: -9999px; }
+            tr { border: 1px solid #ccc; margin-bottom: 10px; }
+            td { border: none; border-bottom: 1px solid #eee; position: relative; padding-left: 50%; text-align: right;}
+            td::before { content: attr(data-label); position: absolute; left: 10px; width: 45%; padding-right: 10px; white-space: nowrap; text-align: left; font-weight: bold; color:#555; }
+             td img { margin-left: auto; margin-right: 0; } /* Align image right on mobile */
+        }
+         /* Flash messages styling (jika ada) */
+         .flash-messages { list-style: none; padding: 0; margin-bottom: 15px; }
+         .flash-messages li { padding: 10px 15px; margin-bottom: 10px; border-radius: 4px; }
+         .flash-danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Rekap Absensi PPNPN</h1>
+
+         {# Tampilkan Flash Messages jika ada #}
+         {% with messages = get_flashed_messages(with_categories=true) %}
+             {% if messages %}
+                 <ul class="flash-messages">
+                 {% for category, message in messages %}
+                     <li class="flash-{{ category }}">{{ message }}</li>
+                 {% endfor %}
+                 </ul>
+             {% endif %}
+         {% endwith %}
+
+        <div class="action-links">
+            <a href="{{ url_for('index') }}">Kembali ke Absensi</a>
+            <a href="{{ url_for('export_excel') }}">Unduh Excel</a>
+        </div>
+
+        {% if recap_data %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nama Pegawai</th>
+                        <th>Posisi</th>      {# <-- KOLOM POSISI HEADER #}
+                        <th>Waktu</th>
+                        <th>Tipe</th>
+                        <th>Lokasi</th>
+                        <th>Foto</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in recap_data %}
+                    <tr>
+                        <td data-label="Nama">{{ record.name }}</td>
+                        <td data-label="Posisi">{{ record.position or '-' }}</td> {# <-- KOLOM POSISI DATA #}
+                        <td data-label="Waktu">{{ record.timestamp.strftime('%Y-%m-%d %H:%M:%S') if record.timestamp else '-' }}</td>
+                        <td data-label="Tipe">{{ 'Masuk' if record.type == 'check_in' else ('Keluar' if record.type == 'check_out' else record.type) }}</td>
+                        <td data-label="Lokasi">
+                            {% if record.latitude and record.longitude %}
+                                <span class="map-popup-link"
+                                      data-lat="{{ record.latitude }}"
+                                      data-lon="{{ record.longitude }}"
+                                      data-name="{{ record.name }}"
+                                      data-time="{{ record.timestamp.strftime('%H:%M:%S') if record.timestamp else '-' }}">
+                                    {{ "%.5f"|format(record.latitude) }}, {{ "%.5f"|format(record.longitude) }}
+                                </span>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td data-label="Foto">
+                            {% if record.photo_url %}
+                                <a href="{{ record.photo_url }}" target="_blank" rel="noopener noreferrer">
+                                    <img src="{{ record.photo_url }}" alt="Foto Absen {{ record.name }}">
+                                </a>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="no-data">Belum ada data absensi yang tercatat.</p>
+        {% endif %}
+    </div>
+
+    {# Modal untuk menampilkan peta #}
+    <div id="mapModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <h2>Lokasi Absensi</h2>
+            <p><strong>Pegawai:</strong> <span id="modalEmployeeName"></span></p>
+            <p><strong>Waktu:</strong> <span id="modalTime"></span></p>
+            <div id="modalMap"></div>
+        </div>
+    </div>
+
+    {# Leaflet JS #}
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+     crossorigin=""></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const modal = document.getElementById('mapModal');
+            const modalMapDiv = document.getElementById('modalMap');
+            const closeBtn = modal.querySelector('.close-btn');
+            const modalEmployeeName = document.getElementById('modalEmployeeName');
+            const modalTime = document.getElementById('modalTime');
+            let mapInstance = null;
+            let mapMarker = null;
+
+            document.querySelectorAll('.map-popup-link').forEach(link => {
+                link.addEventListener('click', (event) => {
+                    const lat = parseFloat(event.target.dataset.lat);
+                    const lon = parseFloat(event.target.dataset.lon);
+                    const name = event.target.dataset.name;
+                    const time = event.target.dataset.time;
+
+                    if (!isNaN(lat) && !isNaN(lon)) {
+                        modalEmployeeName.textContent = name || 'N/A';
+                        modalTime.textContent = time || 'N/A';
+                        modal.style.display = 'block';
+
+                        // Inisialisasi atau update peta di modal
+                        if (!mapInstance) {
+                            mapInstance = L.map(modalMapDiv).setView([lat, lon], 16);
+                            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                                maxZoom: 19,
+                                attribution: '© OpenStreetMap contributors'
+                            }).addTo(mapInstance);
+                            mapMarker = L.marker([lat, lon]).addTo(mapInstance);
+                        } else {
+                            mapInstance.setView([lat, lon], 16);
+                            mapMarker.setLatLng([lat, lon]);
+                        }
+                         mapMarker.bindPopup(`<b>${name}</b><br>${time}`).openPopup();
+
+                        // Penting: Invalidate size setelah modal tampil & map diinisiasi/diupdate
+                        setTimeout(() => {
+                            if(mapInstance) mapInstance.invalidateSize();
+                        }, 10); // Sedikit delay
+                    }
+                });
+            });
+
+            // Tutup modal
+            closeBtn.onclick = () => { modal.style.display = 'none'; };
+            window.onclick = (event) => {
+                if (event.target == modal) { modal.style.display = 'none'; }
+            };
+        });
+    </script>
+</body>
+</html>

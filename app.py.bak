@@ -1,0 +1,165 @@
+import base64
+import io
+import os # Digunakan untuk getenv nanti jika diperlukan
+from datetime import datetime
+from flask import Flask, render_template, request, jsonify, Response
+
+# Import dari SQLAlchemy
+from sqlalchemy import desc, inspect
+from sqlalchemy.orm import Session
+
+# Impor dari file database.py
+from database import Employee, Attendance, init_db, get_db, add_initial_employees, Base, engine
+
+# --- Inisialisasi Aplikasi Flask ---
+app = Flask(__name__)
+# Konfigurasi (opsional, contoh: secret key jika menggunakan session Flask)
+# app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'default-secret-key-for-dev')
+
+# --- Inisialisasi Database saat Aplikasi Dimulai ---
+# Memastikan tabel database ada sebelum aplikasi mulai.
+with app.app_context():
+    try:
+        inspector = inspect(engine)
+        existing_tables = inspector.get_table_names()
+        required_tables = Base.metadata.tables.keys()
+
+        if not all(table_name in existing_tables for table_name in required_tables):
+            print("Database tables not found or incomplete. Creating/Recreating tables...")
+            init_db() # Membuat tabel
+            print("Adding initial data...")
+            add_initial_employees() # Menambah data awal
+        else:
+            print("Database tables verified.")
+    except Exception as e:
+        print(f"CRITICAL ERROR during database initialization: {e}")
+        # Pertimbangkan untuk menghentikan aplikasi jika DB gagal diinisialisasi
+        # import sys
+        # sys.exit(f"Failed to initialize database: {e}")
+
+# --- Routes Aplikasi ---
+@app.route('/')
+def index():
+    """Menampilkan halaman utama (index.html)."""
+    db: Session = next(get_db())
+    employees = []
+    error_message = None
+    try:
+        employees = db.query(Employee).order_by(Employee.name).all()
+    except Exception as e:
+        print(f"Error fetching employees: {e}")
+        error_message = "Gagal memuat daftar pegawai. Silakan coba lagi nanti."
+    finally:
+        db.close()
+
+    return render_template('index.html', employees=employees, error=error_message)
+
+@app.route('/record_attendance', methods=['POST'])
+def record_attendance():
+    """Menerima data absensi dari frontend via POST dan menyimpannya ke DB."""
+    if not request.is_json:
+        return jsonify({"message": "Request body harus dalam format JSON"}), 400
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"message": "Request body JSON kosong"}), 400
+
+    employee_id = data.get('employee_id')
+    attendance_type = data.get('type')
+    latitude = data.get('latitude')
+    longitude = data.get('longitude')
+    photo_base64 = data.get('photo_base64')
+
+    # Validasi Input
+    if not employee_id: return jsonify({"message": "employee_id tidak boleh kosong"}), 400
+    try: employee_id = int(employee_id)
+    except ValueError: return jsonify({"message": "employee_id harus berupa angka"}), 400
+    if not attendance_type: return jsonify({"message": "type (tipe absensi) tidak boleh kosong"}), 400
+    if attendance_type not in ['check_in', 'check_out']: return jsonify({"message": "Tipe absensi tidak valid"}), 400
+    if not photo_base64: return jsonify({"message": "photo_base64 (data foto) tidak boleh kosong"}), 400
+
+    db: Session = next(get_db())
+    try:
+        employee = db.query(Employee).filter(Employee.id == employee_id).first()
+        if not employee:
+            return jsonify({"message": f"Pegawai dengan ID {employee_id} tidak ditemukan"}), 404
+
+        try:
+            if ',' in photo_base64: photo_base64 = photo_base64.split(',', 1)[1]
+            photo_data = base64.b64decode(photo_base64)
+        except (TypeError, ValueError, base64.binascii.Error) as e:
+             print(f"Error decoding base64 photo: {e}")
+             return jsonify({"message": f"Gagal decode data base64 foto: {e}"}), 400
+
+        new_attendance = Attendance(
+            employee_id=employee_id,
+            timestamp=datetime.now(), # Waktu server
+            type=attendance_type,
+            latitude=latitude,
+            longitude=longitude,
+            photo_blob=photo_data
+        )
+
+        db.add(new_attendance)
+        db.commit()
+        db.refresh(new_attendance) # Dapatkan ID dll. setelah commit
+
+        # Siapkan data respons (absensi terakhir)
+        response_data = {
+            "message": "Absensi berhasil direkam",
+            "id": new_attendance.id,
+            "employee_id": new_attendance.employee_id,
+            "employee_name": employee.name,
+            "timestamp": new_attendance.timestamp.isoformat(),
+            "type": new_attendance.type,
+            "latitude": new_attendance.latitude,
+            "longitude": new_attendance.longitude,
+            "photo_base64": photo_base64 # Kirim kembali base64 yg valid
+        }
+        return jsonify(response_data), 201 # 201 Created
+
+    except Exception as e:
+        db.rollback()
+        print(f"Error recording attendance: {e}")
+        # Hindari expose detail error internal ke user
+        return jsonify({"message": "Terjadi kesalahan internal server saat merekam absensi."}), 500
+    finally:
+        db.close()
+
+@app.route('/attendance_photo/<int:attendance_id>')
+def get_attendance_photo(attendance_id):
+    """Mengembalikan data biner gambar dari record absensi tertentu."""
+    db: Session = next(get_db())
+    try:
+        attendance_record = db.query(Attendance).filter(Attendance.id == attendance_id).first()
+        if attendance_record and attendance_record.photo_blob:
+            return Response(attendance_record.photo_blob, mimetype='image/jpeg')
+        else:
+            return jsonify({"message": "Foto atau data absensi tidak ditemukan"}), 404
+    except Exception as e:
+        print(f"Error fetching photo for attendance ID {attendance_id}: {e}")
+        return jsonify({"message": "Terjadi kesalahan internal server saat mengambil foto."}), 500
+    finally:
+        db.close()
+
+# --- Menjalankan Aplikasi ---
+if __name__ == '__main__':
+    # Jalankan server pengembangan Flask
+    # host='0.0.0.0' membuat server bisa diakses dari luar mesin lokal (misal, dari HP di jaringan yg sama)
+    # port=5000 adalah port default Flask
+    # debug=True mengaktifkan mode debug (auto-reload, debugger interaktif)
+    # ssl_context='adhoc' membuat Flask berjalan di HTTPS menggunakan sertifikat sementara (self-signed)
+    # PENTING: 'adhoc' dan debug=True hanya untuk pengembangan!
+
+    # Pesan yang lebih jelas bahwa server menggunakan HTTPS
+    print("Starting Flask development server with adhoc SSL (HTTPS)...")
+    print(f"Access locally via: https://localhost:5000 or https://127.0.0.1:5000")
+    print(f"Access from other devices on the same network via: https://<Your-PC-IP-Address>:5000")
+    print("!!! You will likely see a browser security warning. Accept it to proceed. !!!")
+
+    app.run(
+        host='0.0.0.0',
+        port=5000,
+        debug=True,
+        ssl_context='adhoc' # Ini yang mengaktifkan HTTPS 'adhoc'
+    )

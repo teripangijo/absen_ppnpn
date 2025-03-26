@@ -1,0 +1,5 @@
+Flask
+Flask-BasicAuth
+SQLAlchemy
+pandas
+openpyxl # Diperlukan oleh pandas untuk baca/tulis .xlsx

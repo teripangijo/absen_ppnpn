@@ -1,0 +1,188 @@
+/* Reset sederhana & dasar */
+body, html {
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #eef2f5;
+    color: #333;
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 600px;
+    margin: 30px auto;
+    padding: 25px;
+    background-color: #ffffff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    text-align: center;
+}
+
+h1 {
+    color: #2c3e50;
+    margin-bottom: 25px;
+    font-weight: 600;
+}
+
+/* Kontainer Kamera */
+.camera-container {
+    margin-bottom: 20px;
+    position: relative; /* Untuk styling tambahan jika perlu */
+    background-color: #000; /* Latar belakang hitam untuk video */
+    border-radius: 4px;
+    overflow: hidden; /* Agar video tidak keluar dari border radius */
+    max-width: 320px; /* Batasi lebar maks */
+    margin-left: auto;
+    margin-right: auto;
+}
+
+video {
+    display: block; /* Hapus space bawah */
+    width: 100%; /* Buat responsif */
+    height: auto; /* Jaga rasio aspek */
+}
+
+/* Kontrol (Dropdown & Tombol) */
+.controls {
+    margin-bottom: 20px;
+}
+
+.controls label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #606770;
+    text-align: left; /* Label rata kiri */
+}
+
+/* Styling untuk Choices.js (di enhance oleh library) */
+.choices__input {
+     background-color: #fff !important; /* Override jika perlu */
+     border-radius: 4px !important;
+}
+.choices[data-type*="select-one"] {
+     margin-bottom: 15px; /* Jarak bawah dropdown */
+}
+.choices__inner {
+     background-color: #fff;
+     border: 1px solid #ccc;
+     border-radius: 4px;
+     padding: 5px 10px;
+     min-height: 38px; /* Samakan tinggi dengan tombol */
+     font-size: 1rem;
+}
+.choices__list--dropdown .choices__item--selectable.is-highlighted {
+    background-color: #007bff; /* Warna highlight pilihan */
+    color: white;
+}
+
+
+/* Grup Tombol */
+.button-group {
+    display: flex;
+    justify-content: space-between; /* Tombol menyebar */
+    gap: 15px; /* Jarak antar tombol */
+}
+
+button {
+    flex-grow: 1; /* Tombol mengisi ruang */
+    padding: 12px 15px;
+    font-size: 1rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    font-weight: 500;
+}
+
+button:disabled {
+    background-color: #cccccc;
+    color: #666666;
+    cursor: not-allowed;
+}
+
+#checkin-btn {
+    background-color: #5cb85c; /* Hijau */
+    color: white;
+}
+#checkin-btn:not(:disabled):hover {
+    background-color: #4cae4c;
+}
+
+#checkout-btn {
+    background-color: #d9534f; /* Merah */
+    color: white;
+}
+#checkout-btn:not(:disabled):hover {
+    background-color: #c9302c;
+}
+
+/* Status & Hasil */
+#status {
+    margin-top: 15px;
+    padding: 10px;
+    background-color: #f0f0f0;
+    border-radius: 4px;
+    min-height: 20px; /* Agar tidak collapse */
+    font-weight: 500;
+    color: #555;
+}
+#status.error { /* Style untuk pesan error dari JS */
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+
+.result {
+    margin-top: 25px;
+    padding: 15px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background-color: #f9f9f9;
+    text-align: left; /* Konten hasil rata kiri */
+}
+
+.result h2 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.2rem;
+    color: #333;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 8px;
+}
+
+.result img {
+    display: block;
+    margin: 0 auto 15px auto; /* Foto di tengah */
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    max-width: 160px;
+    height: auto;
+}
+
+.result p {
+    margin-bottom: 8px;
+    font-size: 0.95rem;
+    color: #444;
+}
+.result p strong {
+    color: #111;
+    min-width: 130px; /* Agar titik dua sejajar */
+    display: inline-block;
+}
+
+#map { /* Sudah ada di <style> index.html, bisa dipindah ke sini */
+     height: 250px;
+     margin-top: 15px;
+     border: 1px solid #ddd;
+     border-radius: 4px;
+     z-index: 0; /* Pastikan peta di bawah dropdown jika tumpang tindih */
+}
+
+/* Flash Messages (jika pakai dari Flask) */
+.flash-messages { list-style: none; padding: 0; margin-bottom: 15px; }
+.flash-messages li { padding: 10px 15px; margin-bottom: 10px; border-radius: 4px; }
+.flash-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+.flash-danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+/* Tambahkan style lain jika perlu (info, warning) */
