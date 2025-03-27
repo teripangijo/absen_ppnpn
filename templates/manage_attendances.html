@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manajemen Absensi</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {# Leaflet CSS jika ingin popup peta di sini juga #}
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="..." crossorigin=""/>
+    <style>
+        /* Style dari recap.html bisa dipakai ulang atau di-refine */
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f7f6; }
+        .container { max-width: 1200px; margin: auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #333; margin-bottom: 25px; }
+        .filter-form { background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end; }
+        .filter-form label { font-weight: bold; margin-bottom: 5px; display: block; font-size: 0.9em;}
+        .filter-form select, .filter-form input[type="date"], .filter-form input[type="text"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9em; }
+        .filter-form button { padding: 8px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .filter-form button:hover { background-color: #0056b3; }
+        .action-links { text-align: right; margin-bottom: 20px; }
+        .action-links a, .action-links button { text-decoration: none; padding: 8px 15px; background-color: #5cb85c; color: white; border-radius: 4px; margin-left: 10px; font-size: 0.9em; border: none; cursor: pointer; }
+        .action-links a:hover, .action-links button:hover { background-color: #4cae4c; }
+        .delete-button { background-color: #d9534f; padding: 5px 10px; font-size: 0.8em; }
+        .delete-button:hover { background-color: #c9302c; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 0.9em; vertical-align: middle;}
+        th { background-color: #f2f2f2; color: #555; font-weight: 600; }
+        td img { max-width: 80px; height: auto; border-radius: 4px; display: block; }
+        /* ... (Style flash messages, modal, responsive dari recap.html jika diperlukan) ... */
+         .flash-messages { list-style: none; padding: 0; margin-bottom: 15px; }
+         .flash-messages li { padding: 10px 15px; margin-bottom: 10px; border-radius: 4px; }
+         .flash-danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+         .flash-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Manajemen Absensi PPNPN</h1>
+
+        {# Tampilkan Flash Messages jika ada #}
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="flash-messages">
+                {% for category, message in messages %}
+                    <li class="flash-{{ category }}">{{ message }}</li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        {# --- FORM FILTER --- #}
+        <form method="GET" action="{{ url_for('manage_attendance') }}" class="filter-form">
+            <div>
+                <label for="name">Nama Pegawai:</label>
+                <select id="name" name="name">
+                    <option value="">-- Semua Pegawai --</option>
+                    {% for name in employee_names %}
+                        <option value="{{ name }}" {% if name == current_filters.name %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="start">Tanggal Mulai:</label>
+                <input type="date" id="start" name="start" value="{{ current_filters.start }}">
+            </div>
+            <div>
+                <label for="end">Tanggal Akhir:</label>
+                <input type="date" id="end" name="end" value="{{ current_filters.end }}">
+            </div>
+            <div>
+                <button type="submit">Filter</button>
+            </div>
+        </form>
+        {# --- AKHIR FORM FILTER --- #}
+
+        <div class="action-links">
+            {# Link Export dengan menyertakan filter saat ini #}
+            <a href="{{ url_for('export_filtered_excel', name=current_filters.name, start=current_filters.start, end=current_filters.end) }}">
+                Unduh Excel (Hasil Filter)
+            </a>
+             <a href="{{ url_for('index') }}">Kembali ke Absensi</a> {# Link kembali #}
+        </div>
+
+        {% if attendance_data %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nama Pegawai</th>
+                        <th>Posisi</th>
+                        <th>Waktu</th>
+                        <th>Tipe</th>
+                        <th>Lokasi</th>
+                        <th>Foto</th>
+                        <th>Aksi</th> {# Kolom baru untuk tombol aksi #}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in attendance_data %}
+                    <tr>
+                        <td data-label="Nama">{{ record.name }}</td>
+                        <td data-label="Posisi">{{ record.position or '-' }}</td>
+                        <td data-label="Waktu">{{ record.timestamp.strftime('%Y-%m-%d %H:%M:%S') if record.timestamp else '-' }}</td>
+                        <td data-label="Tipe">{{ 'Masuk' if record.type == 'check_in' else ('Keluar' if record.type == 'check_out' else record.type) }}</td>
+                        <td data-label="Lokasi">
+                            {% if record.latitude and record.longitude %}
+                                {{ "%.5f"|format(record.latitude) }}, {{ "%.5f"|format(record.longitude) }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td data-label="Foto">
+                            {% if record.photo_url %}
+                                <a href="{{ record.photo_url }}" target="_blank" rel="noopener noreferrer">
+                                    <img src="{{ record.photo_url }}" alt="Foto Absen {{ record.name }}">
+                                </a>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td data-label="Aksi">
+                            {# Tombol Edit (belum diimplementasikan backendnya) #}
+                            {# <a href="#" class="edit-button">Edit</a> #}
+
+                            {# Form kecil untuk tombol Delete (lebih aman pakai POST) #}
+                            <form action="{{ url_for('delete_attendance', attendance_id=record.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Anda yakin ingin menghapus data absensi ini?');">
+                                {# Kirim filter saat ini agar redirect kembali ke view yg sama #}
+                                <input type="hidden" name="name_filter" value="{{ current_filters.name }}">
+                                <input type="hidden" name="start_date_filter" value="{{ current_filters.start }}">
+                                <input type="hidden" name="end_date_filter" value="{{ current_filters.end }}">
+                                <button type="submit" class="delete-button">Hapus</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="no-data">Tidak ada data absensi yang cocok dengan filter Anda.</p>
+        {% endif %}
+    </div>
+
+    {# Optional: Tambahkan JS untuk datepicker atau konfirmasi delete yang lebih baik #}
+    <script>
+        // Anda bisa menambahkan validasi tanggal atau JS lainnya di sini
+    </script>
+
+</body>
+</html>
