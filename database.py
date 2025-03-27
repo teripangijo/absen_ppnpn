@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, LargeBinary
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, LargeBinary, Text # <-- Tambahkan Text
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 from datetime import datetime
 
@@ -9,7 +9,8 @@ DATABASE_PATH = os.path.join(BASE_DIR, 'attendance.db')
 DATABASE_URL = f'sqlite:///{DATABASE_PATH}'
 
 # Buat engine SQLAlchemy
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) # check_same_thread False untuk SQLite
+# check_same_thread=False direkomendasikan untuk SQLite dengan Flask/web apps
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
 # Buat session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -23,9 +24,8 @@ class Employee(Base):
     __tablename__ = 'employees'
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True, index=True) # Nama pegawai, unik
-    position = Column(String, nullable=True)                       # <-- KOLOM BARU: Posisi/Jabatan
+    position = Column(String, nullable=True)                       # Posisi/Jabatan
 
-    # Relationship ke Attendance (jika pegawai dihapus, absensinya juga terhapus)
     attendances = relationship("Attendance", back_populates="employee", cascade="all, delete-orphan")
 
     def __repr__(self):
@@ -36,26 +36,42 @@ class Attendance(Base):
     """Model untuk tabel data absensi."""
     __tablename__ = 'attendance'
     id = Column(Integer, primary_key=True, index=True)
-    employee_id = Column(Integer, ForeignKey('employees.id'), nullable=False, index=True) # Foreign key ke Employee
-    timestamp = Column(DateTime, nullable=False, default=datetime.now, index=True) # Waktu absensi
+    employee_id = Column(Integer, ForeignKey('employees.id'), nullable=False, index=True)
+    timestamp = Column(DateTime, nullable=False, default=datetime.now, index=True)
     type = Column(String, nullable=False) # 'check_in' atau 'check_out'
-    latitude = Column(Float, nullable=True) # Koordinat Latitude
-    longitude = Column(Float, nullable=True) # Koordinat Longitude
-    photo_blob = Column(LargeBinary, nullable=False) # Data biner foto
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    # --- PERUBAHAN DI SINI: Buat foto opsional ---
+    photo_blob = Column(LargeBinary, nullable=True) # <-- Diubah menjadi nullable=True
+    # --------------------------------------------
 
-    # Relationship ke Employee
     employee = relationship("Employee", back_populates="attendances")
 
     def __repr__(self):
         return f"<Attendance(id={self.id}, employee_id={self.employee_id}, type='{self.type}', timestamp='{self.timestamp}')>"
 
+# === TAMBAHKAN MODEL AUDIT LOG ===
+class AuditLog(Base):
+    """Model untuk mencatat log perubahan data oleh admin."""
+    __tablename__ = 'audit_log'
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, nullable=False, default=datetime.now) # Waktu log dibuat
+    user = Column(String, nullable=True) # Username admin yang melakukan aksi (dari Basic Auth)
+    action = Column(String, nullable=False) # CREATE, UPDATE, DELETE
+    record_type = Column(String, nullable=False) # Nama tabel/model yang diubah (misal: 'Attendance')
+    record_id = Column(Integer, nullable=True) # ID record yang terpengaruh
+    details = Column(Text, nullable=True) # Deskripsi perubahan
+
+    def __repr__(self):
+        return f"<AuditLog(id={self.id}, user='{self.user}', action='{self.action}', record='{self.record_type}:{self.record_id}')>"
+# === AKHIR TAMBAHAN MODEL AUDIT LOG ===
+
+
 # --- Fungsi Database Lainnya ---
 def init_db():
-    """Membuat semua tabel dalam metadata jika belum ada.
-       Akan mencoba menambahkan kolom baru jika model berubah.
-    """
+    """Membuat/Memperbarui semua tabel dalam metadata (termasuk audit_log)."""
     try:
-        print("Attempting to create/update database tables...")
+        print("Attempting to create/update database tables (including audit_log)...")
         Base.metadata.create_all(bind=engine)
         print("Database tables check/creation complete.")
     except Exception as e:
@@ -69,27 +85,14 @@ def get_db():
     finally:
         db.close()
 
-# Fungsi ini tidak lagi relevan jika menggunakan import,
-# tapi bisa disimpan sebagai referensi atau dihapus.
+# Fungsi add_initial_employees (opsional, tidak relevan jika pakai import)
 def add_initial_employees():
-    db = next(get_db())
-    try:
-        if db.query(Employee).count() == 0:
-            print("Adding initial employees (DEPRECATED - use import script)...")
-            # initial_employees = [...] # Data lama
-            # for emp_name in initial_employees:
-            #     db.add(Employee(name=emp_name, position=None)) # Position akan NULL
-            # db.commit()
-    except Exception as e:
-        print(f"Error adding initial employees: {e}")
-        db.rollback()
-    finally:
-        db.close()
+    # ... (tidak terpakai ...
+    pass
 
-# Blok untuk menjalankan inisialisasi saat script dipanggil langsung
-# Sebaiknya init_db dipanggil dari app.py atau script import
+# Blok if __name__ == "__main__": bisa dikomentari atau dihapus
+# jika init_db dipanggil dari app.py atau script import
 # if __name__ == "__main__":
-#     print("Running database setup (only creates tables if needed)...")
+#     print("Running database setup...")
 #     init_db()
 #     print("Database setup finished.")
-#     print("(Use import_employees.py to add employees from Excel)")
