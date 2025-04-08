@@ -54,7 +54,7 @@ def index():
     error_message = None
 
     try:
-        employees = db.query(Employee.id, Employee.name).order_by(Employee.name).all()
+        employees = db.query(Employee.id, Employee.name).filter(Employee.is_active == True).order_by(Employee.name).all()
 
         if selected_employee_id:
             last_att = db.query(Attendance)\
