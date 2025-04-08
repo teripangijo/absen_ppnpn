@@ -1,7 +1,7 @@
 import os
 import io
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date, time
 from functools import wraps # Untuk decorator auth
 
 from flask import (Flask, render_template, request, jsonify, Response,
@@ -10,7 +10,7 @@ from flask import (Flask, render_template, request, jsonify, Response,
 # from flask import session as flask_session
 from flask_basicauth import BasicAuth
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 # Impor model dan fungsi DB dari database.py
 # Pastikan AuditLog sudah ada di database.py
@@ -113,34 +113,74 @@ def index():
 
 @app.route('/record_attendance', methods=['POST'])
 def record_attendance():
-    """Menerima dan menyimpan data absensi dari frontend."""
+    """Menerima dan menyimpan data absensi, dengan validasi sekali sehari."""
     if not request.is_json: return jsonify({"message": "Request harus JSON."}), 400
     data = request.json
     if not data: return jsonify({"message": "Request body JSON kosong."}), 400
 
     employee_id = data.get('employee_id')
-    attendance_type = data.get('type')
+    attendance_type = data.get('type') # 'check_in' or 'check_out'
     latitude = data.get('latitude')
     longitude = data.get('longitude')
     photo_base64 = data.get('photo_base64')
 
-    # Validasi Input
-    if not all([employee_id, attendance_type, photo_base64]): return jsonify({"message": "Data tidak lengkap (ID, type, foto wajib)."}), 400
-    if attendance_type not in ['check_in', 'check_out']: return jsonify({"message": "Tipe absensi tidak valid."}), 400
+    # Validasi Input Dasar
+    if not all([employee_id, attendance_type, photo_base64]):
+        return jsonify({"message": "Data tidak lengkap (ID, type, foto wajib)."}), 400
+    if attendance_type not in ['check_in', 'check_out']:
+        return jsonify({"message": "Tipe absensi tidak valid."}), 400
 
     db: Session = next(get_db())
     try:
-        # === PERBAIKAN LegacyAPIWarning ===
+        # Cek apakah pegawai valid
         employee = db.get(Employee, int(employee_id))
-        # =================================
+        if not employee:
+            # Tutup sesi sebelum return
+            db.close()
+            return jsonify({"message": f"Pegawai ID {employee_id} tidak ditemukan."}), 404
 
-        if not employee: return jsonify({"message": f"Pegawai ID {employee_id} tidak ditemukan."}), 404
+        # === VALIDASI ABSEN SEKALI SEHARI ===
+        today = date.today() # Dapatkan tanggal hari ini
+        start_of_day = datetime.combine(today, time.min) # Awal hari (00:00:00)
+        end_of_day = datetime.combine(today, time.max)   # Akhir hari (23:59:59...)
 
+        # Query untuk mencari record dengan tipe dan pegawai yg sama di hari ini
+        existing_record = db.query(Attendance).filter(
+            Attendance.employee_id == employee_id,
+            Attendance.type == attendance_type,
+            Attendance.timestamp >= start_of_day,
+            Attendance.timestamp <= end_of_day
+        ).first()
+
+        if existing_record:
+            action_text = "Masuk" if attendance_type == 'check_in' else "Keluar"
+            time_str = existing_record.timestamp.strftime('%H:%M:%S')
+            message = f"Anda sudah melakukan Absen {action_text} hari ini pada pukul {time_str}. Absen hanya bisa dilakukan sekali per tipe per hari."
+            db.close() # Tutup sesi sebelum return
+            return jsonify({"message": message}), 409 # 409 Conflict cocok untuk ini
+        # === AKHIR VALIDASI ABSEN SEKALI SEHARI ===
+
+        # === Validasi Radius (jika masih digunakan) ===
+        if latitude is not None and longitude is not None:
+            # ... (Kode validasi radius tetap sama seperti sebelumnya) ...
+            # Jika GAGAL validasi radius: db.close(); return jsonify(...), 403
+             distance = haversine_distance(ALLOWED_LATITUDE, ALLOWED_LONGITUDE, latitude, longitude)
+             if distance > ALLOWED_RADIUS_METERS:
+                 db.close()
+                 return jsonify({
+                     "message": f"Lokasi Anda ({distance:.0f}m) di luar radius {ALLOWED_RADIUS_METERS}m."
+                 }), 403 # 403 Forbidden
+        else:
+            db.close()
+            return jsonify({"message": "Gagal mendapatkan data lokasi Anda."}), 400
+        # === Akhir Validasi Radius ===
+
+        # --- Lanjutkan jika semua validasi lolos ---
         try:
             photo_blob = base64.b64decode(photo_base64)
-        except (base64.binascii.Error, TypeError) as decode_error:
-            print(f"Error decoding base64: {decode_error}")
-            return jsonify({"message": "Format foto base64 tidak valid."}), 400
+        except Exception as e:
+            db.close()
+            return jsonify({"message": f"Format foto base64 tidak valid: {e}"}), 400
 
         new_attendance = Attendance(
             employee_id=employee_id, timestamp=datetime.now(), type=attendance_type,
@@ -150,7 +190,7 @@ def record_attendance():
         db.commit()
         db.refresh(new_attendance)
 
-        # Respons JSON (sudah benar)
+        # Siapkan respons JSON sukses
         response_data = {
             "message": "Absensi berhasil direkam", "id": new_attendance.id,
             "employee_id": new_attendance.employee_id, "employee_name": employee.name,
@@ -166,7 +206,9 @@ def record_attendance():
         print(f"Error recording attendance: {e}")
         return jsonify({"message": "Terjadi kesalahan server saat merekam absensi."}), 500
     finally:
-        db.close()
+        # Pastikan sesi ditutup di blok finally utama juga
+        if db.is_active:
+             db.close()
 
 
 @app.route('/get_attendance_photo/<int:attendance_id>')
