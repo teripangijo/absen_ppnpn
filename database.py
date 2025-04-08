@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, LargeBinary, Text # <-- Tambahkan Text
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, LargeBinary, Text, Boolean, true
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 from datetime import datetime
 
