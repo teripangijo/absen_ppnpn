@@ -25,6 +25,7 @@ class Employee(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True, index=True) # Nama pegawai, unik
     position = Column(String, nullable=True)                       # Posisi/Jabatan
+    is_active = Column(Boolean, default=True, nullable=False, server_default=true(), index=True)
 
     attendances = relationship("Attendance", back_populates="employee", cascade="all, delete-orphan")
 
