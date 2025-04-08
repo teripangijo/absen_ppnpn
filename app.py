@@ -539,6 +539,24 @@ def export_filtered_excel():
     except Exception as e: print(f"Error exporting: {e}"); flash("Gagal export Excel.", "danger"); return redirect(url_for('manage_attendance', name=name_filter, start=start_date_str, end=end_date_str))
     finally: db.close()
 
+@app.route('/audit_logs')
+@require_basic_auth # Proteksi halaman log
+def audit_logs():
+    """Menampilkan halaman log audit perubahan data."""
+    db: Session = next(get_db())
+    logs = []
+    try:
+        # Ambil log terbaru (misal 200 terakhir), urutkan dari yg paling baru
+        # Anda bisa menambahkan pagination di sini jika log sangat banyak
+        logs = db.query(AuditLog).order_by(desc(AuditLog.timestamp)).limit(200).all()
+    except Exception as e:
+        print(f"Error fetching audit logs: {e}")
+        flash("Gagal memuat data log audit.", "danger")
+    finally:
+        db.close()
+    # Pastikan Anda sudah membuat template 'audit_log_view.html'
+    return render_template('audit_log_view.html', logs=logs)
+
 
 if __name__ == '__main__':
     # Jalankan dengan HTTPS Adhoc untuk development & mobile testing
