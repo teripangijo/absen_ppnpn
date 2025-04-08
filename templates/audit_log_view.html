@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log Audit Perubahan</title>
+    {# Anda bisa menunjuk ke style.css utama jika mau #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        /* Style dasar untuk halaman log audit */
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f7f6; }
+        .container { max-width: 1200px; margin: auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #333; margin-bottom: 25px; }
+        .action-links { margin-bottom: 20px; }
+        .action-links a { text-decoration: none; padding: 8px 15px; background-color: #6c757d; color: white; border-radius: 4px; font-size: 0.9em; }
+        .action-links a:hover { background-color: #5a6268; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 0.85em; vertical-align: top; } /* vertical-align: top */
+        th { background-color: #f2f2f2; color: #555; font-weight: 600; }
+        td.details { max-width: 450px; word-wrap: break-word; white-space: pre-wrap; } /* Tampilkan detail lebih baik */
+        .no-data { text-align: center; color: #777; margin-top: 30px; }
+         /* Flash messages styling (jika ada) */
+         .flash-messages { list-style: none; padding: 0; margin-bottom: 15px; }
+         .flash-messages li { padding: 10px 15px; margin-bottom: 10px; border-radius: 4px; }
+         .flash-danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+         /* Responsive */
+        @media screen and (max-width: 768px) {
+            td.details { max-width: none; }
+            th, td { padding: 8px; font-size: 0.8em; }
+            h1 { font-size: 1.5em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Log Audit Perubahan Data</h1>
+
+        <div class="action-links">
+            <a href="{{ url_for('manage_attendance') }}">← Kembali ke Manajemen Absensi</a>
+        </div>
+
+        {# Tampilkan Flash Messages jika ada (misal error load) #}
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="flash-messages">
+                {% for category, message in messages %}
+                    <li class="flash-{{ category }}">{{ message }}</li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        {% if logs %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Waktu</th>
+                        <th>User</th>
+                        <th>Aksi</th>
+                        <th>Tipe Record</th>
+                        <th>ID Record</th>
+                        <th>Detail Perubahan</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log_entry in logs %}
+                    <tr>
+                        <td>{{ log_entry.timestamp.strftime('%Y-%m-%d %H:%M:%S %Z') if log_entry.timestamp else '-' }}</td>
+                        <td>{{ log_entry.user or 'N/A' }}</td>
+                        <td>{{ log_entry.action }}</td>
+                        <td>{{ log_entry.record_type }}</td>
+                        <td>{{ log_entry.record_id or '-' }}</td>
+                        <td class="details">{{ log_entry.details or '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="no-data">Belum ada catatan log audit.</p>
+        {% endif %}
+
+    </div>
+</body>
+</html>
