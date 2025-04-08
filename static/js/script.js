@@ -285,17 +285,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // 2. Validasi Radius Sisi Klien (jika ada)
-            if (!isNaN(allowedLatitude) && !isNaN(allowedLongitude) && !isNaN(allowedRadius)) {
-                const distance = haversineDistance(allowedLatitude, allowedLongitude, location.latitude, location.longitude);
-                 console.log(`DEBUG KLIEN: Jarak terhitung: ${distance.toFixed(2)} meter`);
-                if (distance > allowedRadius) {
-                    showStatus(`GAGAL: Lokasi Anda (${distance.toFixed(0)}m) di luar radius ${allowedRadius}m.`, true);
-                    setButtonsEnabled(true);
-                    return;
-                } else {
-                     showStatus(`Lokasi valid (${distance.toFixed(0)}m). Mengambil foto...`); // Update status
-                }
-            }
+            //if (!isNaN(allowedLatitude) && !isNaN(allowedLongitude) && !isNaN(allowedRadius)) {
+            //    const distance = haversineDistance(allowedLatitude, allowedLongitude, location.latitude, location.longitude);
+            //     console.log(`DEBUG KLIEN: Jarak terhitung: ${distance.toFixed(2)} meter`);
+            //    if (distance > allowedRadius) {
+            //        showStatus(`GAGAL: Lokasi Anda (${distance.toFixed(0)}m) di luar radius ${allowedRadius}m.`, true);
+            //        setButtonsEnabled(true);
+            //        return;
+            //    } else {
+            //         showStatus(`Lokasi valid (${distance.toFixed(0)}m). Mengambil foto...`); // Update status
+            //    }
+            //}
 
             // 3. Ambil Foto
             const photoBase64 = capturePhoto();
