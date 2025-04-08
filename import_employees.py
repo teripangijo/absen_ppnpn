@@ -1,123 +1,129 @@
+# import_employees.py
 import pandas as pd
 import os
 from sqlalchemy.orm import sessionmaker
-from database import engine, Base, Employee # Impor model Employee
+# Impor model Employee dan fungsi/engine dari database.py
+from database import engine, Base, Employee, init_db
 
-# --- Konfigurasi ---
-EXCEL_FILE_PATH = 'daftar_pegawai.xlsx'  # Ganti jika nama file Excel berbeda
-NAME_COLUMN_HEADER = 'Nama Pegawai'      # Sesuaikan dengan header kolom Nama di Excel Anda
-POSITION_COLUMN_HEADER = 'Jabatan'       # Sesuaikan dengan header kolom Jabatan di Excel Anda
-
-# Kategori posisi yang diizinkan (untuk validasi)
-ALLOWED_POSITIONS = ["Pramu Kantor", "Petugas Keamanan Dalam", "Petugas Kesehatan", "Dokter", "Pengemudi", "Petugas Keamanan BMN"]
+# --- Konfigurasi (Tetap sama) ---
+EXCEL_FILE_PATH = 'daftar_pegawai.xlsx'
+NAME_COLUMN_HEADER = 'Nama Pegawai'
+POSITION_COLUMN_HEADER = 'Jabatan'
+ALLOWED_POSITIONS = ["Pramu Kantor", "Petugas Keamanan Dalam", "Petugas Kesehatan", "Pengemudi", "Dokter", "Petugas Kesehatan BMN"] # Sesuaikan dengan list lengkap Anda
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def import_from_excel():
-    """Membaca file Excel dan mengimpor/memperbarui nama & posisi pegawai ke database."""
-    print(f"Mencoba membaca file Excel: {EXCEL_FILE_PATH}")
-
+def import_or_update_employees():
+    """Impor, update posisi, dan nonaktifkan pegawai berdasarkan Excel."""
+    print(f"Membaca file Excel: {EXCEL_FILE_PATH}")
     if not os.path.exists(EXCEL_FILE_PATH):
         print(f"ERROR: File Excel '{EXCEL_FILE_PATH}' tidak ditemukan.")
         return
 
     db = SessionLocal()
     added_count = 0
-    skipped_count = 0
-    updated_count = 0
-    # Ambil data pegawai yg sudah ada sebagai dictionary {nama: objek_employee}
-    existing_employees = {emp.name: emp for emp in db.query(Employee).all()}
-    print(f"Ditemukan {len(existing_employees)} pegawai di database sebelum import.")
+    updated_pos_count = 0
+    reactivated_count = 0
+    deactivated_count = 0
+    skipped_invalid_count = 0
 
     try:
         df = pd.read_excel(EXCEL_FILE_PATH)
-        print(f"File Excel '{EXCEL_FILE_PATH}' berhasil dibaca.")
-
-        # Validasi header kolom
-        if NAME_COLUMN_HEADER not in df.columns:
-            print(f"ERROR: Kolom '{NAME_COLUMN_HEADER}' tidak ditemukan.")
-            return
-        if POSITION_COLUMN_HEADER not in df.columns:
-            print(f"ERROR: Kolom '{POSITION_COLUMN_HEADER}' tidak ditemukan.")
+        if NAME_COLUMN_HEADER not in df.columns or POSITION_COLUMN_HEADER not in df.columns:
+            print(f"ERROR: Pastikan kolom '{NAME_COLUMN_HEADER}' dan '{POSITION_COLUMN_HEADER}' ada di Excel.")
             return
 
-        print(f"Memproses kolom '{NAME_COLUMN_HEADER}' dan '{POSITION_COLUMN_HEADER}'...")
-
-        # Iterasi melalui baris DataFrame
+        # 1. Dapatkan data valid dari Excel (nama sebagai key)
+        excel_employees = {}
         for index, row in df.iterrows():
-            name = row[NAME_COLUMN_HEADER]
-            position = row[POSITION_COLUMN_HEADER]
+            name = str(row[NAME_COLUMN_HEADER]).strip() if pd.notna(row[NAME_COLUMN_HEADER]) else None
+            position = str(row[POSITION_COLUMN_HEADER]).strip() if pd.notna(row[POSITION_COLUMN_HEADER]) else None
 
-            # Bersihkan data
-            name = str(name).strip() if pd.notna(name) else None
-            position = str(position).strip() if pd.notna(position) else None
-
-            # Validasi Nama
-            if not name:
-                print(f"- Melewati baris {index + 2}: Nama kosong.")
-                skipped_count += 1
+            if not name or not position:
+                print(f"- Melewati baris {index + 2} Excel: Nama atau Jabatan kosong.")
+                skipped_invalid_count += 1
+                continue
+            if position not in ALLOWED_POSITIONS:
+                print(f"- Melewati baris {index + 2} Excel ({name}): Jabatan '{position}' tidak valid.")
+                skipped_invalid_count += 1
                 continue
 
-            # Validasi Posisi (Jabatan)
-            if not position:
-                 print(f"- Melewati baris {index + 2} ({name}): Jabatan kosong.")
-                 skipped_count += 1
-                 continue
-            elif position not in ALLOWED_POSITIONS:
-                print(f"- Melewati baris {index + 2} ({name}): Jabatan '{position}' tidak valid.")
-                skipped_count += 1
-                continue
+            # Jika nama duplikat di Excel, gunakan yang terakhir
+            excel_employees[name] = position
 
-            # Cek apakah pegawai sudah ada
-            if name in existing_employees:
-                employee = existing_employees[name]
-                # Cek apakah posisi perlu diupdate
+        print(f"Ditemukan {len(excel_employees)} data pegawai valid di Excel.")
+
+        # 2. Dapatkan data pegawai dari DB (nama sebagai key)
+        db_employees = {emp.name: emp for emp in db.query(Employee).all()}
+        print(f"Ditemukan {len(db_employees)} pegawai di Database.")
+
+        # 3. Proses Tambah/Update/Reaktivasi
+        for name, position in excel_employees.items():
+            if name in db_employees:
+                # Pegawai sudah ada di DB
+                employee = db_employees[name]
+                needs_update = False
+                # Update posisi jika berbeda
                 if employee.position != position:
                     print(f"* Mengupdate Posisi: {name} ({employee.position} -> {position})")
                     employee.position = position
-                    updated_count += 1
-                    # Tandai sesi perlu di-commit (jika ada perubahan)
-                    if employee not in db.dirty: db.add(employee) # Pastikan objek terdaftar untuk update
-                else:
-                    # print(f"- Melewati (Sudah Ada & Posisi Sama): {name}") # Opsi: jangan print jika sama
-                    skipped_count += 1
-            else: # Jika pegawai baru
+                    needs_update = True
+                # Aktifkan kembali jika sebelumnya nonaktif
+                if not employee.is_active:
+                    print(f"* Mengaktifkan Kembali: {name}")
+                    employee.is_active = True
+                    reactivated_count += 1
+                    needs_update = True
+
+                if needs_update:
+                     updated_pos_count += 1 # Hitung sebagai update jika posisi berubah atau reaktivasi
+                     if employee not in db.dirty: db.add(employee) # Pastikan terdaftar untuk update
+                # Hapus dari dict agar tahu mana yg perlu dinonaktifkan nanti
+                del db_employees[name]
+            else:
+                # Pegawai baru
                 print(f"+ Menambahkan Pegawai: {name} ({position})")
-                new_employee = Employee(name=name, position=position)
+                new_employee = Employee(name=name, position=position, is_active=True)
                 db.add(new_employee)
                 added_count += 1
 
-        # Commit perubahan jika ada penambahan atau update
-        if added_count > 0 or updated_count > 0:
-            print(f"\nMenyimpan {added_count} penambahan dan {updated_count} update ke database...")
+        # 4. Proses Nonaktifkan Pegawai
+        # Pegawai yang tersisa di db_employees adalah yang tidak ada di Excel
+        for name_to_deactivate, employee_to_deactivate in db_employees.items():
+            if employee_to_deactivate.is_active: # Hanya nonaktifkan yang masih aktif
+                print(f"- Menonaktifkan Pegawai (tidak ada di Excel): {name_to_deactivate}")
+                employee_to_deactivate.is_active = False
+                deactivated_count += 1
+                if employee_to_deactivate not in db.dirty: db.add(employee_to_deactivate)
+
+        # 5. Commit Perubahan
+        if db.new or db.dirty: # Cek jika ada penambahan atau perubahan
+            print("\nMenyimpan perubahan ke database...")
             db.commit()
             print("Perubahan berhasil disimpan.")
         else:
-            print("\nTidak ada pegawai baru atau update posisi untuk disimpan.")
+            print("\nTidak ada perubahan data pegawai di database.")
 
-    except FileNotFoundError:
-        print(f"ERROR: File Excel '{EXCEL_FILE_PATH}' tidak ditemukan.")
-    except KeyError as e:
-        print(f"ERROR: Kolom header '{e}' tidak ditemukan di file Excel.")
     except Exception as e:
-        print(f"\nTerjadi error saat memproses: {e}")
+        print(f"\nTerjadi error: {e}")
         print("Rollback perubahan...")
         db.rollback()
     finally:
         db.close()
-        print("\n--- Ringkasan Proses Import ---")
+        print("\n--- Ringkasan Proses Import/Update ---")
         print(f"Pegawai baru ditambahkan : {added_count}")
-        print(f"Pegawai posisi diupdate  : {updated_count}")
-        print(f"Baris dilewati (sudah ada/invalid/kosong): {skipped_count}")
+        print(f"Posisi pegawai diupdate  : {updated_pos_count}") # Termasuk reaktivasi
+        print(f"Pegawai diaktifkan kembali: {reactivated_count}")
+        print(f"Pegawai dinonaktifkan   : {deactivated_count}")
+        print(f"Baris Excel dilewati    : {skipped_invalid_count}")
 
 if __name__ == "__main__":
-    print("========================================")
-    print("      SCRIPT IMPORT PEGAWAI DARI EXCEL")
-    print("========================================")
+    print("==============================================")
+    print(" SCRIPT IMPORT/UPDATE PEGAWAI DARI EXCEL")
+    print("==============================================")
     print("Memastikan tabel database ada/diperbarui...")
-    # Pastikan tabel ada sebelum import
-    Base.metadata.create_all(bind=engine)
-    print("\nMemulai proses impor...")
-    import_from_excel()
-    print("\nProses impor selesai.")
-    print("========================================")
+    init_db() # Panggil init_db untuk buat tabel jika belum ada
+    print("\nMemulai proses import/update...")
+    import_or_update_employees() # Ganti nama fungsi yg dipanggil
+    print("\nProses import/update selesai.")
+    print("==============================================")
