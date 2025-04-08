@@ -161,18 +161,18 @@ def record_attendance():
         # === AKHIR VALIDASI ABSEN SEKALI SEHARI ===
 
         # === Validasi Radius (jika masih digunakan) ===
-        if latitude is not None and longitude is not None:
+        #if latitude is not None and longitude is not None:
             # ... (Kode validasi radius tetap sama seperti sebelumnya) ...
             # Jika GAGAL validasi radius: db.close(); return jsonify(...), 403
-             distance = haversine_distance(ALLOWED_LATITUDE, ALLOWED_LONGITUDE, latitude, longitude)
-             if distance > ALLOWED_RADIUS_METERS:
-                 db.close()
-                 return jsonify({
-                     "message": f"Lokasi Anda ({distance:.0f}m) di luar radius {ALLOWED_RADIUS_METERS}m."
-                 }), 403 # 403 Forbidden
-        else:
-            db.close()
-            return jsonify({"message": "Gagal mendapatkan data lokasi Anda."}), 400
+             #distance = haversine_distance(ALLOWED_LATITUDE, ALLOWED_LONGITUDE, latitude, longitude)
+             #if distance > ALLOWED_RADIUS_METERS:
+                 #db.close()
+                 #return jsonify({
+                     #"message": f"Lokasi Anda ({distance:.0f}m) di luar radius {ALLOWED_RADIUS_METERS}m."
+                 #}), 403 # 403 Forbidden
+        #else:
+            #db.close()
+            #return jsonify({"message": "Gagal mendapatkan data lokasi Anda."}), 400
         # === Akhir Validasi Radius ===
 
         # --- Lanjutkan jika semua validasi lolos ---
