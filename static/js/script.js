@@ -247,9 +247,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Jika tidak ada coords, mapContainerDiv tetap 'none'
     } // <-- Akhir dari window.displayLastAttendance
 
-    /** 6. Fungsi Utama Pengendali Proses Absensi */
+    /** 6. Fungsi Utama Pengendali Proses Absensi (DIMODIFIKASI DENGAN KONFIRMASI) */
     async function handleAttendance(type) {
-        // ... (Kode fungsi handleAttendance tetap sama) ...
         const selectedEmployeeId = employeeSelect ? employeeSelect.value : null;
         if (!selectedEmployeeId) {
             showStatus('GAGAL: Silakan pilih nama PPNPN terlebih dahulu.', true);
@@ -258,20 +257,63 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // === TAMBAHKAN KONFIRMASI ===
+        const actionText = type === 'check_in' ? 'Masuk' : 'Keluar';
+        const confirmation = confirm(`Anda yakin ingin melakukan Absen ${actionText} untuk pegawai terpilih?`);
+
+        if (!confirmation) {
+            showStatus("Absen dibatalkan oleh pengguna.");
+            // Pastikan tombol kembali aktif jika dibatalkan sebelum proses dimulai
+            setButtonsEnabled(true);
+            return; // Hentikan proses jika pengguna memilih "Tidak" (Cancel)
+        }
+        // === AKHIR KONFIRMASI ===
+
+        // Lanjutkan proses jika dikonfirmasi "Yakin" (OK)
+        showStatus(`Memproses Absen ${actionText}...`); // Update status
         setButtonsEnabled(false);
         if (lastAttendanceDiv) lastAttendanceDiv.style.display = 'none';
         if (mapContainerDiv) mapContainerDiv.style.display = 'none';
 
         try {
+            // 1. Dapatkan Lokasi (async)
             const location = await getCurrentLocation();
+            if (location.latitude === null || location.longitude === null) {
+                 showStatus('GAGAL: Tidak bisa mendapatkan lokasi Anda. Absensi dibatalkan.', true);
+                 setButtonsEnabled(true);
+                 return;
+            }
+
+            // 2. Validasi Radius Sisi Klien (jika ada)
+            if (!isNaN(allowedLatitude) && !isNaN(allowedLongitude) && !isNaN(allowedRadius)) {
+                const distance = haversineDistance(allowedLatitude, allowedLongitude, location.latitude, location.longitude);
+                 console.log(`DEBUG KLIEN: Jarak terhitung: ${distance.toFixed(2)} meter`);
+                if (distance > allowedRadius) {
+                    showStatus(`GAGAL: Lokasi Anda (${distance.toFixed(0)}m) di luar radius ${allowedRadius}m.`, true);
+                    setButtonsEnabled(true);
+                    return;
+                } else {
+                     showStatus(`Lokasi valid (${distance.toFixed(0)}m). Mengambil foto...`); // Update status
+                }
+            }
+
+            // 3. Ambil Foto
             const photoBase64 = capturePhoto();
-            if (!photoBase64) { setButtonsEnabled(true); return; }
+            if (!photoBase64) {
+                setButtonsEnabled(true);
+                return;
+            }
+
+            // 4. Kirim Data ke Backend (async)
+            // Status akan diupdate lagi di dalam sendAttendanceData
             await sendAttendanceData(selectedEmployeeId, type, location, photoBase64);
+
         } catch (error) {
             console.error("Unexpected error during attendance process:", error);
             showStatus(`Proses absensi gagal: ${error.message || 'Error tidak diketahui'}`, true);
             setButtonsEnabled(true);
         }
+        // Tombol akan di-enable lagi di finally block sendAttendanceData
     }
 
     // --- Event Listeners ---
