@@ -73,7 +73,7 @@ video {
 }
 .choices__list--dropdown .choices__item--selectable.is-highlighted {
     background-color: #007bff; /* Warna highlight pilihan */
-    color: white;
+    color: #212529;
 }
 
 
